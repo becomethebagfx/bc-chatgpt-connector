@@ -82,7 +82,9 @@ function buildServer(): McpServer {
 }
 
 const app = express();
-app.use(express.json());
+// inflate: false refuses compressed request bodies, which closes body-parser GHSA-27r3-jxmh-p828
+// (DoS via trailing bytes after a compressed body) until 1.20.9 clears the 14-day floor on 2026-11-05.
+app.use(express.json({ inflate: false }));
 
 app.get("/", (_req: Request, res: Response) => {
   res.json({
