@@ -1,7 +1,7 @@
 // Remote MCP connector for BuildingConnected, served over streamable HTTP so ChatGPT
 // (and any MCP client) can call it. Exposes a curated set of read-only tools against
 // the BuildingConnected test environment.
-import express, { type Request, type Response } from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
@@ -82,8 +82,9 @@ function buildServer(): McpServer {
 }
 
 const app = express();
-// inflate: false refuses compressed request bodies, which closes body-parser GHSA-27r3-jxmh-p828
-// (DoS via trailing bytes after a compressed body) until 1.20.9 clears the 14-day floor on 2026-11-05.
+// inflate: false refuses compressed request bodies. The fix for body-parser GHSA-27r3-jxmh-p828 (DoS via
+// trailing bytes after a compressed body) is installed (1.20.9, 2.4.0); this stays as defense in depth,
+// since ChatGPT sends uncompressed JSON and it costs nothing.
 app.use(express.json({ inflate: false }));
 
 app.get("/", (_req: Request, res: Response) => {
@@ -139,6 +140,18 @@ app.post("/mcp", async (req: Request, res: Response) => {
 
 app.get("/mcp", (_req: Request, res: Response) => {
   res.status(405).json({ error: "Method Not Allowed. Use POST for the MCP endpoint." });
+});
+
+// body-parser rejections (415 compressed body, 413 too large, 400 bad JSON) answer with their own status and
+// one log line, instead of a stack trace per request. The log and reply carry only the error type, never
+// err.message, which can echo the request body. Anything else goes to Express's default handler.
+app.use((err: Error & { status?: number; type?: string }, req: Request, res: Response, next: NextFunction) => {
+  if (res.headersSent || !err.type || !err.status || err.status < 400 || err.status >= 500) {
+    next(err);
+    return;
+  }
+  console.warn(`[bc-connector] ${req.method} ${req.path} ${err.status} ${err.type}`);
+  res.status(err.status).json({ error: err.type });
 });
 
 app.listen(PORT, () => {
