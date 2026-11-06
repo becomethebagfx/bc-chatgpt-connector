@@ -143,8 +143,8 @@ app.get("/mcp", (_req: Request, res: Response) => {
 });
 
 // body-parser rejections (415 compressed body, 413 too large, 400 bad JSON) answer with their own status and
-// one log line, instead of a stack trace per request. The log and reply carry only the error type, never
-// err.message, which can echo the request body. Anything else goes to Express's default handler.
+// one log line (method, path, status, error type) instead of a stack trace per request. Neither the log nor
+// the reply includes err.message, which can echo the request body. Anything else goes to Express's default handler.
 app.use((err: Error & { status?: number; type?: string }, req: Request, res: Response, next: NextFunction) => {
   if (res.headersSent || !err.type || !err.status || err.status < 400 || err.status >= 500) {
     next(err);
